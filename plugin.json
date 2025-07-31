@@ -1,0 +1,24 @@
+{
+  "main": "dist/index.html",
+  "logo": "logo.png",
+  "preload": "preload.js",
+  "features": [
+    {
+      "code": "claude-code-config",
+      "explain": "管理和切换Claude Code配置文件",
+      "cmds": [
+        "Claude Code配置",
+        "Claude Code Settings",
+        "cc配置",
+        "cc-settings"
+      ]
+    }
+  ],
+  "pluginSetting": {
+    "single": true,
+    "height": 600
+  },
+  "development": {
+    "main": "http://localhost:5173"
+  }
+}
