@@ -434,6 +434,11 @@ function App() {
             value={editingJson}
             onChange={setEditingJson}
             onSave={handleSaveEditedJson}
+            onCancel={() => {
+              // 恢复原始内容并关闭编辑器
+              setEditingJson(JSON.stringify(currentSettings, null, 2));
+              setShowJsonEditor(false);
+            }}
           />
         )}
 
