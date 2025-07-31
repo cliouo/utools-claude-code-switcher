@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Cloud, CloudOff, Loader2 } from 'lucide-react';
 
 export function SyncStatus() {

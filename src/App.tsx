@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
-import { Settings, Save, FileText, Plus, Trash2, Check, FileCode, Command, AlertCircle } from 'lucide-react';
+import { Settings, Save, FileText, Trash2, Check, FileCode } from 'lucide-react';
 import { SimpleJsonEditor } from './components/SimpleJsonEditor';
 import { ConfigReference } from './components/ConfigReference';
 import { SyncStatus } from './components/SyncStatus';
 import { dbService } from './services/database';
 import { generateRandomName } from './lib/utils';
+import { getJsonErrorMessage, validateSettings } from './lib/validation';
 import type { SettingsProfile, ClaudeCodeSettings } from './types/settings';
 
 function App() {
   const [profiles, setProfiles] = useState<SettingsProfile[]>([]);
   const [currentSettings, setCurrentSettings] = useState<ClaudeCodeSettings | null>(null);
-  const [currentSettingsStr, setCurrentSettingsStr] = useState<string>('');
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [editingProfileName, setEditingProfileName] = useState<string | null>(null);
@@ -21,6 +21,13 @@ function App() {
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [editingJson, setEditingJson] = useState('');
   const [syncLoading, setSyncLoading] = useState(true);
+
+  const profilesRef = useRef<SettingsProfile[]>([]);
+
+  // 保持 profilesRef 与 profiles 同步
+  useEffect(() => {
+    profilesRef.current = profiles;
+  }, [profiles]);
 
   useEffect(() => {
     initializeApp();
@@ -63,7 +70,6 @@ function App() {
         try {
           const settings = JSON.parse(settingsContent);
           setCurrentSettings(settings);
-          setCurrentSettingsStr(settingsContent);
           setEditingJson(JSON.stringify(settings, null, 2));
         } catch (error) {
           console.error('Failed to parse settings:', error);
@@ -129,7 +135,6 @@ function App() {
         setActiveProfileId(profile.id);
         
         setCurrentSettings(profile.settings);
-        setCurrentSettingsStr(JSON.stringify(profile.settings, null, 2));
         setEditingJson(JSON.stringify(profile.settings, null, 2));
         window.utools?.showNotification(`已切换到配置 "${profile.name}"`);
       } else {
@@ -164,12 +169,26 @@ function App() {
 
   const updateProfileName = async (profileId: string, newName: string) => {
     const profile = profiles.find(p => p.id === profileId);
-    if (profile) {
-      const updatedProfile = { ...profile, name: newName };
+    if (profile && newName.trim()) {
+      // 先移除旧的快捷指令
+      window.utools?.removeFeature(`quick-switch-${profileId}`);
+      
+      const updatedProfile = { ...profile, name: newName.trim() };
       const success = await dbService.saveProfile(updatedProfile);
       if (success) {
         await loadProfiles();
         setEditingProfileName(null);
+        
+        // 添加新的快捷指令
+        window.utools?.setFeature({
+          code: `quick-switch-${profileId}`,
+          explain: `快速切换到 "${newName.trim()}" 配置`,
+          cmds: [
+            `cc-${newName.trim()}`,
+            `切换${newName.trim()}`,
+            `switch-${newName.trim()}`
+          ]
+        });
       }
     }
   };
@@ -177,11 +196,18 @@ function App() {
   const handleSaveEditedJson = async () => {
     try {
       const parsedSettings = JSON.parse(editingJson);
+      
+      // 验证配置格式
+      const validation = validateSettings(parsedSettings);
+      if (!validation.valid) {
+        window.utools?.showNotification(validation.error || '配置格式错误');
+        return;
+      }
+      
       const success = await window.preload?.writeSettings(editingJson);
       
       if (success) {
         setCurrentSettings(parsedSettings);
-        setCurrentSettingsStr(editingJson);
         
         // 如果当前有激活的配置，同步更新它
         if (activeProfileId) {
@@ -205,13 +231,22 @@ function App() {
         window.utools?.showNotification('保存配置失败');
       }
     } catch (error) {
-      window.utools?.showNotification('JSON 格式错误');
+      const errorMsg = getJsonErrorMessage(error);
+      window.utools?.showNotification(errorMsg);
     }
   };
 
   const handleSaveEditedProfileJson = async (profileId: string) => {
     try {
       const parsedSettings = JSON.parse(editingProfileJson);
+      
+      // 验证配置格式
+      const validation = validateSettings(parsedSettings);
+      if (!validation.valid) {
+        window.utools?.showNotification(validation.error || '配置格式错误');
+        return;
+      }
+      
       const profile = profiles.find(p => p.id === profileId);
       if (!profile) return;
 
@@ -230,7 +265,6 @@ function App() {
           const writeSuccess = await window.preload?.writeSettings(JSON.stringify(parsedSettings, null, 2));
           if (writeSuccess) {
             setCurrentSettings(parsedSettings);
-            setCurrentSettingsStr(JSON.stringify(parsedSettings, null, 2));
             setEditingJson(JSON.stringify(parsedSettings, null, 2));
             window.utools?.showNotification('配置已更新并同步到当前配置文件');
           }
@@ -243,26 +277,37 @@ function App() {
         window.utools?.showNotification('保存配置失败');
       }
     } catch (error) {
-      window.utools?.showNotification('JSON 格式错误');
+      const errorMsg = getJsonErrorMessage(error);
+      window.utools?.showNotification(errorMsg);
     }
   };
 
   // 监听快捷指令触发
   useEffect(() => {
-    window.utools?.onPluginEnter((action) => {
+    // 使用函数引用确保只注册一次
+    const handlePluginEnter = (action: any) => {
       if (action.code.startsWith('quick-switch-')) {
         const profileId = action.code.replace('quick-switch-', '');
-        const profile = profiles.find(p => p.id === profileId);
+        // 使用 ref 获取最新的 profiles
+        const profile = profilesRef.current.find(p => p.id === profileId);
         if (profile) {
           switchProfile(profile);
         }
       }
-    });
-  }, [profiles]);
+    };
+
+    // 注册监听器
+    window.utools?.onPluginEnter(handlePluginEnter);
+
+    // 注意：uTools 的 onPluginEnter 没有提供取消注册的方法
+    // 所以我们只在组件首次挂载时注册一次
+  }, []); // 空依赖数组，只在组件挂载时执行一次
 
   // 定期检查配置是否被其他设备删除
   useEffect(() => {
-    const checkInterval = setInterval(async () => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const checkProfileExists = async () => {
       if (activeProfileId) {
         const exists = await dbService.profileExists(activeProfileId);
         if (!exists) {
@@ -270,9 +315,19 @@ function App() {
           await loadProfiles();
         }
       }
-    }, 5000);
+    };
 
-    return () => clearInterval(checkInterval);
+    // 只在有激活配置时启动定时器
+    if (activeProfileId) {
+      intervalId = setInterval(checkProfileExists, 5000);
+    }
+
+    // 清理函数
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, [activeProfileId]);
 
   if (syncLoading) {

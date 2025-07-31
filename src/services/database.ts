@@ -10,11 +10,18 @@ class DatabaseService {
   }
 
   // 等待云同步完成
-  async waitForSync(): Promise<void> {
+  async waitForSync(maxWaitTime: number = 5000): Promise<void> {
+    const startTime = Date.now();
     let state = await window.utools?.db.promises.replicateStateFromCloud();
-    while (state === 1) {
+    
+    while (state === 1 && (Date.now() - startTime) < maxWaitTime) {
       await new Promise(resolve => setTimeout(resolve, 100));
       state = await window.utools?.db.promises.replicateStateFromCloud();
+    }
+    
+    // 如果超时仍在同步，发出警告
+    if (state === 1) {
+      console.warn('Cloud sync timeout, proceeding with local data');
     }
   }
 
@@ -23,8 +30,8 @@ class DatabaseService {
     await this.waitForSync();
     const docs = await window.utools?.db.promises.allDocs('claude-code-profile/');
     return docs
-      .filter((doc: ProfileDoc) => doc.type === 'profile')
-      .map((doc: ProfileDoc) => doc.profile)
+      .filter((doc: any) => doc.type === 'profile')
+      .map((doc: any) => (doc as ProfileDoc).profile)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
