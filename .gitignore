@@ -1,0 +1,20 @@
+utools_doc/
+claude_code_settings.md
+node_modules/
+dist/
+.env
+.env.*
+
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+
+# WebStorm / IDEA
+.idea/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
