@@ -31,13 +31,45 @@ const getBackupDir = () => {
   return backupDir;
 };
 
+// 默认配置内容
+const getDefaultSettings = () => {
+  return {
+    "env": {
+      "ANTHROPIC_AUTH_TOKEN": "sk-xxxxx",
+      "ANTHROPIC_BASE_URL": "https://api.xxx.com"
+    },
+    "permissions": {
+      "allow": [],
+      "deny": []
+    }
+  };
+};
+
 // 读取当前配置
 const readSettings = () => {
   return new Promise((resolve) => {
     const settingsPath = getSettingsPath();
+    const settingsDir = path.dirname(settingsPath);
     
+    // 如果配置文件不存在，创建默认配置
     if (!fs.existsSync(settingsPath)) {
-      resolve(null);
+      // 确保目录存在
+      if (!fs.existsSync(settingsDir)) {
+        fs.mkdirSync(settingsDir, { recursive: true });
+      }
+      
+      // 创建默认配置文件
+      const defaultSettings = getDefaultSettings();
+      const defaultContent = JSON.stringify(defaultSettings, null, 2);
+      
+      fs.writeFile(settingsPath, defaultContent, 'utf8', (err) => {
+        if (err) {
+          console.error('Error creating default settings:', err);
+          resolve(null);
+        } else {
+          resolve(defaultContent);
+        }
+      });
       return;
     }
     
